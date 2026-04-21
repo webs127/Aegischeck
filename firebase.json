@@ -1,0 +1,41 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "aegischeck",
+          "appId": "1:676775287106:android:6d4c74915091938dbfd0db",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "aegischeck",
+          "configurations": {
+            "android": "1:676775287106:android:6d4c74915091938dbfd0db",
+            "ios": "1:676775287106:ios:be2c095d02bbb570bfd0db",
+            "web": "1:676775287106:web:f7096eb62a0784b4bfd0db",
+            "windows": "1:676775287106:web:9ca5f1ba7c23fc90bfd0db"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}

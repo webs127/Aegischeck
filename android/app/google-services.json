@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "676775287106",
+    "project_id": "aegischeck",
+    "storage_bucket": "aegischeck.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:676775287106:android:6d4c74915091938dbfd0db",
+        "android_client_info": {
+          "package_name": "com.aegischeck.aegischeck"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDoYX7FAG-Q-SKcA5SYxLB6_gMi6R23Doo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

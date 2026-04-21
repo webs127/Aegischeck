@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDoc(uid) {
+      return get(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function userExists(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid));
+    }
+
+    function signedInUserOrgId() {
+      return isSignedIn() && userExists(request.auth.uid)
+        ? userDoc(request.auth.uid).data.orgId
+        : '';
+    }
+
+    function signedInUserRole() {
+      return isSignedIn() && userExists(request.auth.uid)
+        ? userDoc(request.auth.uid).data.role
+        : '';
+    }
+
+    function isScannerAdminRole(role) {
+      // Match app logic: scanner accepts roles containing "admin".
+      return role is string && role.matches('.*[Aa][Dd][Mm][Ii][Nn].*');
+    }
+
+    function isOwnUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdminInOrg(orgId) {
+      return isSignedIn()
+        && signedInUserOrgId() == orgId
+        && isScannerAdminRole(signedInUserRole());
+    }
+
+    match /users/{userId} {
+      allow create: if isOwnUser(userId)
+        && request.resource.data.orgId is string;
+
+      allow read: if isOwnUser(userId)
+        || (isSignedIn() && signedInUserOrgId() == resource.data.orgId);
+
+      allow update: if isOwnUser(userId)
+        || isAdminInOrg(resource.data.orgId);
+
+      allow delete: if false;
+    }
+
+    match /organizations/{orgId} {
+      allow create: if isSignedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+
+      allow read: if isSignedIn()
+        && (signedInUserOrgId() == orgId || resource.data.createdBy == request.auth.uid);
+
+      allow update: if isAdminInOrg(orgId)
+        || (isSignedIn() && resource.data.createdBy == request.auth.uid);
+
+      allow delete: if false;
+    }
+
+    match /attendance/{docId} {
+      function isValidAttendanceId() {
+        return docId.matches('^[^/]+_[0-9]{8}_(sign_in|sign_out)$');
+      }
+
+      function attendanceUserId() {
+        return docId.split('_')[0];
+      }
+
+      function attendanceUserOrgId() {
+        return userExists(attendanceUserId())
+          ? userDoc(attendanceUserId()).data.orgId
+          : '';
+      }
+
+      allow create: if isSignedIn()
+        && isValidAttendanceId()
+        && request.resource.data.keys().hasOnly(['userId', 'organizationId', 'type', 'scanTimestamp', 'attendanceStatus', 'timestamp'])
+        && request.resource.data.userId is string
+        && request.resource.data.organizationId is string
+        && (request.resource.data.type == 'sign_in' || request.resource.data.type == 'sign_out')
+        && request.resource.data.scanTimestamp is int
+        && (request.resource.data.attendanceStatus == 'early'
+          || request.resource.data.attendanceStatus == 'on_time'
+          || request.resource.data.attendanceStatus == 'late')
+        && request.resource.data.userId.matches('^[^/]+$')
+        && signedInUserOrgId() == request.resource.data.organizationId
+        && isAdminInOrg(request.resource.data.organizationId)
+        && !exists(/databases/$(database)/documents/attendance/$(docId));
+
+      allow read: if isSignedIn()
+        && isValidAttendanceId()
+        && attendanceUserOrgId() != ''
+        && signedInUserOrgId() == attendanceUserOrgId();
+
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}
