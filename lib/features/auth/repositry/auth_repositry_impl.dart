@@ -2,6 +2,7 @@ import 'package:aegischeck/core/models/signup_data.dart';
 import 'package:aegischeck/core/service/firestore_service.dart';
 import 'package:aegischeck/features/auth/repositry/auth_repositry.dart';
 import 'package:aegischeck/features/auth/service/auth_service.dart';
+import 'package:aegischeck/features/auth/service/device_binding_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -9,8 +10,13 @@ import 'package:flutter/foundation.dart';
 class AuthRepositoryImpl implements AuthRepository {
   final AuthService _authService;
   final FirestoreService _firestoreService;
+  final DeviceBindingService _deviceBindingService;
 
-  AuthRepositoryImpl(this._authService, this._firestoreService);
+  AuthRepositoryImpl(
+    this._authService,
+    this._firestoreService,
+    this._deviceBindingService,
+  );
 
   @override
   Future<String> registerAdmin(SignUpData data) async {
@@ -49,18 +55,31 @@ class AuthRepositoryImpl implements AuthRepository {
       debugPrint(
         '[AuthRepository.registerAdmin] Writing user profile. uid=$uid orgId=$orgId',
       );
+      final shouldBindDevice = _deviceBindingService.isSupported;
+      final userData = {
+        "username": data.username,
+        "email": data.email,
+        "orgId": orgId,
+        "role": "admin",
+        "department": "",
+        "status": "Absent",
+        "createdAt": FieldValue.serverTimestamp(),
+      };
+
+      if (shouldBindDevice) {
+        final deviceId = await _deviceBindingService.getDeviceId();
+        final deviceName = await _deviceBindingService.getDeviceName();
+        userData.addAll({
+          "deviceId": deviceId,
+          "deviceName": deviceName,
+          "deviceBoundAt": FieldValue.serverTimestamp(),
+        });
+      }
+
       await _firestoreService.setData(
         collection: "users",
         docId: uid,
-        data: {
-          "username": data.username,
-          "email": data.email,
-          "orgId": orgId,
-          "role": "admin",
-          "department": "",
-          "status": "Absent",
-          "createdAt": FieldValue.serverTimestamp(),
-        },
+        data: userData,
       );
 
       debugPrint(
@@ -88,13 +107,76 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<String> login(String email, String password) async {
     try {
       debugPrint('[AuthRepository.login] Attempting login for email=$email');
-      final user = await _authService.login(email, password);
+      final userCredential = await _authService.login(email, password);
+      final uid = userCredential.user?.uid;
+      if (uid == null || uid.isEmpty) {
+        throw FirebaseAuthException(
+          code: 'missing-uid',
+          message: 'Firebase returned an empty uid after login.',
+        );
+      }
+
+      try {
+        await _enforceDeviceBinding(uid);
+      } catch (e) {
+        debugPrint('[AuthRepository.login] Device binding failure, forcing logout');
+        await _authService.logout();
+        rethrow;
+      }
+
       debugPrint('[AuthRepository.login] Login success for email=$email');
-      return user.user!.uid;
+      return uid;
     } catch (e, stackTrace) {
       debugPrint('[AuthRepository.login] Login failed: $e');
       debugPrint('[AuthRepository.login] Stack: $stackTrace');
       rethrow;
+    }
+  }
+
+  Future<void> _enforceDeviceBinding(String uid) async {
+    if (!_deviceBindingService.isSupported) {
+      debugPrint('[AuthRepository.login] Device binding skipped on unsupported platform.');
+      return;
+    }
+
+    final currentDeviceId = await _deviceBindingService.getDeviceId();
+    final currentDeviceName = await _deviceBindingService.getDeviceName();
+    final snapshot = await _firestoreService.getData(
+      collection: 'users',
+      docId: uid,
+    );
+    final profileData = snapshot.data() as Map<String, dynamic>?;
+
+    if (profileData == null) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'not-found',
+        message: 'User profile not found during device binding.',
+      );
+    }
+
+    final storedDeviceId = (profileData['deviceId'] ?? '').toString().trim();
+
+    if (storedDeviceId.isEmpty) {
+      debugPrint('[AuthRepository.login] Binding device for uid=$uid deviceId=$currentDeviceId');
+      await _firestoreService.updateData(
+        collection: 'users',
+        docId: uid,
+        data: {
+          'deviceId': currentDeviceId,
+          'deviceName': currentDeviceName,
+          'deviceBoundAt': FieldValue.serverTimestamp(),
+        },
+      );
+      return;
+    }
+
+    if (storedDeviceId != currentDeviceId) {
+      await _authService.logout();
+      throw FirebaseAuthException(
+        code: 'device-locked',
+        message: 'This account is linked to another device.',
+      );
     }
   }
 
@@ -175,18 +257,31 @@ class AuthRepositoryImpl implements AuthRepository {
           message: 'Firebase returned an empty uid after registration.',
         );
       }
+
+      final userData = {
+        "fullname": data.fullname,
+        "email": data.email,
+        "orgId": orgId,
+        "role": data.role.trim(),
+        "department": data.department.trim(),
+        "status": data.status.trim().isEmpty ? 'Absent' : data.status.trim(),
+        "createdAt": FieldValue.serverTimestamp(),
+      };
+
+      if (_deviceBindingService.isSupported) {
+        final deviceId = await _deviceBindingService.getDeviceId();
+        final deviceName = await _deviceBindingService.getDeviceName();
+        userData.addAll({
+          'deviceId': deviceId,
+          'deviceName': deviceName,
+          'deviceBoundAt': FieldValue.serverTimestamp(),
+        });
+      }
+
       await _firestoreService.setData(
         collection: "users",
         docId: uid,
-        data: {
-          "fullname": data.fullname,
-          "email": data.email,
-          "orgId": orgId,
-          "role": data.role.trim(),
-          "department": data.department.trim(),
-          "status": data.status.trim().isEmpty ? 'Absent' : data.status.trim(),
-          "createdAt": FieldValue.serverTimestamp(),
-        },
+        data: userData,
       );
       return orgId;
     } catch (e, stackTrace) {

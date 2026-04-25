@@ -95,6 +95,17 @@ class _LoginScreenState extends State<LoginScreen> {
                                       icon: Icon(Icons.remove_red_eye),
                                     ),
                                   ),
+                                  if (auth.error != null && auth.error!.isNotEmpty)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(vertical: 8),
+                                      child: Text(
+                                        auth.error!,
+                                        style: const TextStyle(
+                                          color: Colors.red,
+                                          fontSize: 14,
+                                        ),
+                                      ),
+                                    ),
                                   Row(
                                     mainAxisAlignment:
                                         MainAxisAlignment.spaceBetween,
@@ -137,20 +148,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                     color: ColorManager.primary,
                                     onPressed: () async {
+                                      final auth = context.read<AuthViewModel>();
                                       await auth.login();
-                                      // if (!context.mounted || auth.error != null) {
-                                      //   return;
-                                      // }
 
-                                      // if (auth.currentOrgId.isNotEmpty) {
-                                      //   context
-                                      //       .read<EmployeesViewModel>()
-                                      //       .watchEmployeesByOrgId(
-                                      //         auth.currentOrgId,
-                                      //       );
-                                      // }
+                                      if (!context.mounted) {
+                                        return;
+                                      }
 
-                                      // context.pushNamed(RouteConstants.home);
+                                      // Error is now displayed inline in the form
+                                      // Navigation logic would go here if login successful
+                                      // context.goNamed(RouteConstants.home);
                                     },
                                     child: Text(
                                       "Sign In",

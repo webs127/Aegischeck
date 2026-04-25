@@ -10,23 +10,37 @@ class AuthGate extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = context.read<AuthViewModel>();
+    final viewModel = context.watch<AuthViewModel>();
 
     return StreamBuilder<User?>(
       stream: viewModel.authState,
       builder: (context, snapshot) {
-        // Loading state
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (viewModel.isAuthInProgress || snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        // Logged in
-        if (snapshot.hasData) {
-          return LandingScreen(); 
+
+        if (snapshot.hasData && !viewModel.isFullyAuthenticated) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            viewModel.ensureOrgContext();
+          });
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
-        // Logged out
-        return AdminLoginScreen();
+
+        if (snapshot.hasData && viewModel.isFullyAuthenticated) {
+          return LandingScreen();
+        }
+
+        if (!snapshot.hasData) {
+          return AdminLoginScreen();
+        }
+
+        return const Scaffold(
+          body: Center(child: CircularProgressIndicator()),
+        );
       },
     );
   }

@@ -125,20 +125,46 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
         .collection('organizations')
         .doc(orgId)
         .snapshots()
-        .listen((snapshot) {
-      final data = snapshot.data();
-      final settingsRaw = data == null ? null : data['settings'];
-      final settings = settingsRaw is Map<String, dynamic> ? settingsRaw : null;
+        .listen(
+          (snapshot) {
+            final data = snapshot.data();
+            final settingsRaw = data == null ? null : data['settings'];
+            final settings = settingsRaw is Map<String, dynamic> ? settingsRaw : null;
 
-      if (!mounted) {
-        return;
-      }
+            if (!mounted) {
+              return;
+            }
 
-      setState(() {
-        _policy = attendancePolicyFromSettings(settings, DateTime.now());
-      });
-      _refreshActionAvailability();
-    });
+            setState(() {
+              _policy = attendancePolicyFromSettings(settings, DateTime.now());
+            });
+            _refreshActionAvailability();
+          },
+          onError: (error) {
+            final errorText = error.toString();
+            if (errorText.contains('permission-denied')) {
+              _policySubscription?.cancel();
+              _policySubscription = null;
+              if (!mounted) {
+                return;
+              }
+
+              setState(() {
+                _policy = attendancePolicyFromSettings(null, DateTime.now());
+                _errorMessage = 'Please sign in again to refresh your policy.';
+              });
+              _refreshActionAvailability();
+              debugPrint(
+                '[QrAttendanceEmployeeView] Policy listener stopped after permission-denied.',
+              );
+              return;
+            }
+
+            debugPrint(
+              '[QrAttendanceEmployeeView] Policy listener error: $error',
+            );
+          },
+        );
   }
 
   void _refreshActionAvailability() {
