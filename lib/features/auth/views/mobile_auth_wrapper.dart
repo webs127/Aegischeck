@@ -12,23 +12,33 @@ class MobileAuthWrapper extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = context.read<AuthViewModel>();
+    final viewModel = context.watch<AuthViewModel>();
 
     return StreamBuilder<User?>(
       stream: viewModel.authState,
       builder: (context, snapshot) {
-        // Loading state
-        if (snapshot.connectionState == ConnectionState.waiting) {
+        if (viewModel.isAuthInProgress || snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: LoadingWidget()));
         }
-        // Logged in
-        if (snapshot.hasData) {
+
+        if (snapshot.hasData && !viewModel.isFullyAuthenticated) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            viewModel.ensureOrgContext();
+          });
+          return const Scaffold(body: Center(child: LoadingWidget()));
+        }
+
+        if (snapshot.hasData && viewModel.isFullyAuthenticated) {
           return HomeScreen();
         }
-        // Logged out
-        return context.watch<AuthViewModel>().isMobileLogin
-            ? const LoginScreen()
-            : const SignupScreen();
+
+        if (!snapshot.hasData) {
+          return context.watch<AuthViewModel>().isMobileLogin
+              ? const LoginScreen()
+              : const SignupScreen();
+        }
+
+        return const Scaffold(body: Center(child: LoadingWidget()));
       },
     );
   }

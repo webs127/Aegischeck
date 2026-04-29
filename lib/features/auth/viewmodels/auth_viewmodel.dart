@@ -7,6 +7,14 @@ import 'package:aegischeck/features/auth/widgets/reusable_setup_widget.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+enum AuthStateStatus {
+  unknown,
+  authenticating,
+  authenticated,
+  unauthenticated,
+  error,
+}
+
 class AuthViewModel with ChangeNotifier {
   PageController pageController = PageController();
   final List<ReusableSetupWidget> _views = [
@@ -239,7 +247,19 @@ class AuthViewModel with ChangeNotifier {
 
   final AuthRepository _repo;
 
-  AuthViewModel(this._repo);
+  AuthViewModel(this._repo) {
+    _initializeAuthState();
+  }
+
+  Future<void> _initializeAuthState() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    status = AuthStateStatus.authenticating;
+    notifyListeners();
+    await ensureOrgContext();
+  }
+
   TextEditingController email = TextEditingController();
   TextEditingController orgName = TextEditingController();
   TextEditingController password = TextEditingController();
@@ -280,7 +300,30 @@ class AuthViewModel with ChangeNotifier {
       );
       return true;
     } catch (e, stackTrace) {
-      error = e.toString();
+      // Extract user-friendly error message
+      String userFriendlyError;
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'email-already-in-use':
+            userFriendlyError = 'An account with this email already exists.';
+            break;
+          case 'invalid-email':
+            userFriendlyError = 'Invalid email address.';
+            break;
+          case 'weak-password':
+            userFriendlyError = 'Password is too weak.';
+            break;
+          case 'operation-not-allowed':
+            userFriendlyError = 'Email/password accounts are not enabled.';
+            break;
+          default:
+            userFriendlyError = e.message ?? 'Registration failed. Please try again.';
+        }
+      } else {
+        userFriendlyError = 'Registration failed. Please try again.';
+      }
+
+      error = userFriendlyError;
       debugPrint('[AuthViewModel.register] Registration failed: $e');
       debugPrint('[AuthViewModel.register] Stack: $stackTrace');
       return false;
@@ -320,7 +363,30 @@ class AuthViewModel with ChangeNotifier {
         '[AuthViewModel.registerWithOrgCode] registerWithOrgCode success. orgId=$orgId',
       );
     } catch (e, stackTrace) {
-      error = e.toString();
+      // Extract user-friendly error message
+      String userFriendlyError;
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'email-already-in-use':
+            userFriendlyError = 'An account with this email already exists.';
+            break;
+          case 'invalid-email':
+            userFriendlyError = 'Invalid email address.';
+            break;
+          case 'weak-password':
+            userFriendlyError = 'Password is too weak.';
+            break;
+          case 'operation-not-allowed':
+            userFriendlyError = 'Email/password accounts are not enabled.';
+            break;
+          default:
+            userFriendlyError = e.message ?? 'Registration failed. Please try again.';
+        }
+      } else {
+        userFriendlyError = 'Registration failed. Please try again.';
+      }
+
+      error = userFriendlyError;
       debugPrint('[AuthViewModel.registerWithOrgCode] Registration failed: $e');
       debugPrint('[AuthViewModel.registerWithOrgCode] Stack: $stackTrace');
     } finally {
@@ -333,6 +399,14 @@ class AuthViewModel with ChangeNotifier {
   }
 
   Stream<User?> get authState => _repo.authStateChanges();
+
+  AuthStateStatus status = AuthStateStatus.unknown;
+  bool get isAuthenticated => status == AuthStateStatus.authenticated;
+  bool get isAuthInProgress => status == AuthStateStatus.authenticating;
+  bool get isFullyAuthenticated =>
+      status == AuthStateStatus.authenticated &&
+      currentOrgId.isNotEmpty &&
+      currentUserProfile != null;
 
   bool isLoading = false;
   String? error = '';
@@ -347,13 +421,11 @@ class AuthViewModel with ChangeNotifier {
 
     try {
       await _repo.logout();
-      currentUserProfile = null;
-      currentOrgId = '';
-      currentRole = '';
     } catch (e) {
       error = e.toString();
     }
 
+    _clearAuthState();
     isLoading = false;
     notifyListeners();
   }
@@ -361,6 +433,7 @@ class AuthViewModel with ChangeNotifier {
   Future<void> login() async {
     isLoading = true;
     error = null;
+    status = AuthStateStatus.authenticating;
     notifyListeners();
 
     debugPrint('[AuthViewModel.login] Login start for email=${email.text}');
@@ -375,29 +448,63 @@ class AuthViewModel with ChangeNotifier {
         throw Exception('Logged-in user has no orgId in users collection.');
       }
 
+      status = AuthStateStatus.authenticated;
       debugPrint(
         '[AuthViewModel.login] Profile loaded. uid=$id role=$currentRole orgId=$currentOrgId',
       );
     } catch (e, stackTrace) {
-      error = e.toString();
+      String userFriendlyError;
+      if (e is FirebaseAuthException) {
+        switch (e.code) {
+          case 'device-locked':
+            userFriendlyError = 'This account is linked to another device.';
+            break;
+          case 'user-not-found':
+            userFriendlyError = 'No account found with this email address.';
+            break;
+          case 'wrong-password':
+            userFriendlyError = 'Incorrect password.';
+            break;
+          case 'invalid-email':
+            userFriendlyError = 'Invalid email address.';
+            break;
+          case 'user-disabled':
+            userFriendlyError = 'This account has been disabled.';
+            break;
+          case 'too-many-requests':
+            userFriendlyError = 'Too many failed login attempts. Please try again later.';
+            break;
+          default:
+            userFriendlyError = e.message ?? 'Login failed. Please try again.';
+        }
+      } else {
+        userFriendlyError = 'Login failed. Please try again.';
+      }
+
+      error = userFriendlyError;
+      status = AuthStateStatus.unauthenticated;
+      _clearAuthState();
       notifyListeners();
       debugPrint('[AuthViewModel.login] Login failed: $error');
       debugPrint('[AuthViewModel.login] Stack: $stackTrace');
+      isLoading = false;
+      return;
     }
 
     isLoading = false;
-    debugPrint('[AuthViewModel.login] Login flow finished. error=$error');
+    debugPrint('[AuthViewModel.login] Login flow finished successfully. error=$error');
     notifyListeners();
   }
 
   Future<String?> ensureOrgContext() async {
-    if (currentOrgId.isNotEmpty) {
-      return currentOrgId;
-    }
-
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid.isEmpty) {
+      _clearAuthState();
       return null;
+    }
+
+    if (currentOrgId.isNotEmpty && currentUserProfile != null) {
+      return currentOrgId;
     }
 
     try {
@@ -405,13 +512,23 @@ class AuthViewModel with ChangeNotifier {
       currentUserProfile = await _repo.getUserProfile(uid);
       currentOrgId = (currentUserProfile?['orgId'] ?? '').toString().trim();
       currentRole = (currentUserProfile?['role'] ?? '').toString().trim();
+      status = AuthStateStatus.authenticated;
       notifyListeners();
       return currentOrgId.isEmpty ? null : currentOrgId;
     } catch (e, stackTrace) {
       debugPrint('[AuthViewModel.ensureOrgContext] Failed: $e');
       debugPrint('[AuthViewModel.ensureOrgContext] Stack: $stackTrace');
+      _clearAuthState();
       return null;
     }
+  }
+
+  void _clearAuthState() {
+    id = '';
+    currentUserProfile = null;
+    currentOrgId = '';
+    currentRole = '';
+    status = AuthStateStatus.unauthenticated;
   }
 }
 

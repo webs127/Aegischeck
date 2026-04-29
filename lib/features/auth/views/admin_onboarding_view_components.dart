@@ -94,7 +94,17 @@ class AdminLoginView extends StatelessWidget {
                     color: ColorManager.primary1,
                     onPressed: () async {
                       await login.login();
-                      if (!context.mounted || login.error != null) {
+                      if (!context.mounted) {
+                        return;
+                      }
+
+                      if (login.error != null) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(login.error!),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                         return;
                       }
 

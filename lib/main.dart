@@ -4,6 +4,7 @@ import 'package:aegischeck/features/auth/repositry/auth_repositry.dart';
 import 'package:aegischeck/features/auth/repositry/auth_repositry_impl.dart';
 import 'package:aegischeck/features/auth/service/auth_service.dart';
 import 'package:aegischeck/features/auth/service/auth_service_impl.dart';
+import 'package:aegischeck/features/auth/service/device_binding_service.dart';
 import 'package:aegischeck/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:aegischeck/features/employees/viewmodels/employees_viewmodel.dart';
 import 'package:aegischeck/features/landing/viewmodels/landing_viewmodel.dart';
@@ -99,6 +100,9 @@ class MyApp extends StatelessWidget {
               FirestoreServiceImpl(context.read<FirebaseFirestore>()),
         ),
 
+        Provider<DeviceBindingService>(
+          create: (_) => DeviceBindingService(),
+        ),
         Provider<AuthService>(
           create: (context) =>
               FirebaseAuthService(context.read<FirebaseAuth>()),
@@ -108,6 +112,7 @@ class MyApp extends StatelessWidget {
           create: (context) => AuthRepositoryImpl(
             context.read<AuthService>(),
             context.read<FirestoreService>(),
+            context.read<DeviceBindingService>(),
           ),
         ),
 
