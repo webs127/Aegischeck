@@ -1,6 +1,10 @@
 import 'package:aegischeck/core/managers/color_manager.dart';
+import 'package:aegischeck/core/services/location_service.dart';
+import 'package:aegischeck/features/settings/viewmodels/settings_viewmodel.dart';
 import 'package:aegischeck/features/settings/widgets/extra_data_with_checkbox.dart';
+import 'package:aegischeck/shared/components/custom_textformfield_with_date.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 class SettingsSecurityAccessScreen extends StatefulWidget {
   const SettingsSecurityAccessScreen({super.key});
@@ -83,10 +87,115 @@ class _SettingsSecurityAccessScreenState
               Divider(),
               SizedBox(height: 10),
               ExtraDataWithCheckBox(
+                value: context.watch<SettingsViewModel>().showOfficeRadius,
+                onChanged: context
+                    .read<SettingsViewModel>()
+                    .onShowOfficeRadiusChanged,
                 heading: "Geofencing Restrictions",
                 subText:
                     "Employees must be within the office radius to access their QR code.",
               ),
+              context.watch<SettingsViewModel>().showOfficeRadius ? Selector<SettingsViewModel, TextEditingController>(
+                builder: (context, value, child) => SizedBox(
+                  width: 300,
+                  child: CustomTextFormField(
+                    controller: value,
+                    labelText: "Allowed Radius (meters)",
+                  ),
+                ),
+                selector: (__, vm) => vm.allowedRadius,
+              ) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? SizedBox(height: 10) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? Selector<SettingsViewModel, TextEditingController>(
+                builder: (context, value, child) => SizedBox(
+                  width: 300,
+                  child: TextFormField(
+                    controller: value,
+                    decoration: InputDecoration(
+                      labelText: "Latitude",
+                      labelStyle: TextStyle(
+                        color: ColorManager.black,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      enabledBorder: OutlineInputBorder(),
+                      focusedBorder: OutlineInputBorder(),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                selector: (__, vm) => vm.lat,
+              ) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? SizedBox(height: 10) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? Selector<SettingsViewModel, TextEditingController>(
+                builder: (context, value, child) => SizedBox(
+                  width: 300,
+                  child: TextFormField(
+                    controller: value,
+                    decoration: InputDecoration(
+                      labelText: "Longitude",
+                      labelStyle: TextStyle(
+                        color: ColorManager.black,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      enabledBorder: OutlineInputBorder(),
+                      focusedBorder: OutlineInputBorder(),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                selector: (__, vm) => vm.lng,
+              ) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? SizedBox(height: 10) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? MaterialButton(
+                color: ColorManager.primary1,
+                shape: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide.none,
+                ),
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                height: 50,
+                onPressed: () async {
+                  final locationService = LocationService();
+                  context.read<SettingsViewModel>().lat.clear();
+                  context.read<SettingsViewModel>().lng.clear();
+
+                  final hasPermission = await locationService.requestPermission();
+                  if (!hasPermission) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Location permission is required')),
+                    );
+                    return;
+                  }
+
+                  final location = await locationService.getCurrentLocation();
+                  if (location != null) {
+                    context.read<SettingsViewModel>().lat.text = location['lat']!.toStringAsFixed(6);
+                    context.read<SettingsViewModel>().lng.text = location['lng']!.toStringAsFixed(6);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Location updated successfully')),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Failed to get current location. Please check location services.')),
+                    );
+                  }
+                },
+                child: Text(
+                  "Get Current Location",
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: ColorManager.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? SizedBox(height: 10) : SizedBox(),
+              context.watch<SettingsViewModel>().showOfficeRadius ? ExtraDataWithCheckBox(
+                value: context.watch<SettingsViewModel>().strictMode,
+                onChanged: context.read<SettingsViewModel>().onStrictModeChanged,
+                heading: "Strict Mode",
+                subText: "Enforce strict location validation on scanner side.",
+              ) : SizedBox(),
               SizedBox(height: 5),
               ExtraDataWithCheckBox(
                 heading: "IP Network Binding",
@@ -126,7 +235,12 @@ class _SettingsSecurityAccessScreenState
                     ),
                     padding: EdgeInsets.symmetric(horizontal: 20),
                     height: 50,
-                    onPressed: () {},
+                    onPressed: () async {
+                      final success = await context.read<SettingsViewModel>().discardChanges();
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Changes discarded')),
+                      );
+                    },
                     child: Text(
                       "Discard Changes",
                       style: TextStyle(
@@ -144,15 +258,39 @@ class _SettingsSecurityAccessScreenState
                     ),
                     padding: EdgeInsets.symmetric(horizontal: 20),
                     height: 50,
-                    onPressed: () {},
-                    child: Text(
-                      "Save Security Settings",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: ColorManager.white,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    onPressed: context.watch<SettingsViewModel>().isSaving
+                        ? null
+                        : () async {
+                            final success = await context.read<SettingsViewModel>().saveSettings();
+                            if (success) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Security settings saved successfully')),
+                              );
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(context.read<SettingsViewModel>().errorMessage ?? 'Failed to save settings'),
+                                ),
+                              );
+                            }
+                          },
+                    child: context.watch<SettingsViewModel>().isSaving
+                        ? SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(ColorManager.white),
+                            ),
+                          )
+                        : Text(
+                            "Save Security Settings",
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: ColorManager.white,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
                   ),
                 ],
               ),
@@ -164,28 +302,6 @@ class _SettingsSecurityAccessScreenState
   }
 }
 
-class CustomTextFormField extends StatelessWidget {
-  final String labelText;
-  const CustomTextFormField({super.key, required this.labelText});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: TextFormField(
-        decoration: InputDecoration(
-          labelText: labelText,
-          labelStyle: TextStyle(
-            color: ColorManager.black,
-            fontWeight: FontWeight.w600,
-          ),
-          enabledBorder: OutlineInputBorder(),
-          focusedBorder: OutlineInputBorder(),
-          border: OutlineInputBorder(),
-        ),
-      ),
-    );
-  }
-}
 
 class OrganizationLogo extends StatelessWidget {
   const OrganizationLogo({super.key});

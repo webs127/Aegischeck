@@ -1,6 +1,6 @@
 import 'dart:async';
-
 import 'package:aegischeck/core/managers/color_manager.dart';
+import 'package:aegischeck/core/services/location_service.dart';
 import 'package:aegischeck/features/auth/viewmodels/auth_viewmodel.dart';
 import 'package:aegischeck/features/qr/models/qr_attendance_action.dart';
 import 'package:aegischeck/features/qr/models/qr_attendance_payload.dart';
@@ -8,6 +8,7 @@ import 'package:aegischeck/features/qr/services/attendance_policy_utils.dart';
 import 'package:aegischeck/routes/route_constants.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -34,6 +35,7 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
   bool _canSignIn = true;
   bool _canSignOut = true;
   String? _policyMessage;
+  Map<String, dynamic>? _settings;
 
   @override
   void initState() {
@@ -105,8 +107,8 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
 
       setState(() {
         _policy = attendancePolicyFromSettings(settings, DateTime.now());
+        _settings = settings;
       });
-      _refreshActionAvailability();
     } catch (_) {
       if (!mounted) {
         return;
@@ -136,6 +138,7 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
 
       setState(() {
         _policy = attendancePolicyFromSettings(settings, DateTime.now());
+        _settings = settings;
       });
       _refreshActionAvailability();
     });
@@ -201,13 +204,94 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
       return;
     }
 
-    _issuePayload(userId: userId, orgId: orgId, action: action);
+    // Geo-fencing check
+    final showOfficeRadius = _settings?['showOfficeRadius'] ?? false;
+    Map<String, double>? locationData;
+    if (showOfficeRadius) {
+      final location = _settings?['location'];
+      if (location is Map<String, dynamic>) {
+        final orgLat = (location['lat'] as num?)?.toDouble() ?? 0.0;
+        final orgLng = (location['lng'] as num?)?.toDouble() ?? 0.0;
+        final allowedRadius = (_settings?['allowedRadius'] as num?)?.toInt() ?? 100;
+
+        // Check if office location is set to reasonable values
+        if ((orgLat.abs() < 1.0 && orgLng.abs() < 1.0) || orgLat.abs() > 90.0 || orgLng.abs() > 180.0) {
+          setState(() {
+            _errorMessage = 'Office location coordinates appear invalid. Please update them in settings.';
+          });
+          return;
+        }
+
+        final locationService = LocationService();
+        
+        // Check location services first
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          setState(() {
+            _errorMessage = 'Location services are disabled. Please enable location services to generate QR code.';
+          });
+          return;
+        }
+
+        // Check permissions
+        final hasPermission = await locationService.requestPermission();
+        if (!hasPermission) {
+          setState(() {
+            _errorMessage = 'Location permission is required to generate QR code.';
+          });
+          return;
+        }
+
+        final position = await locationService.getCurrentPosition();
+        if (position == null) {
+          setState(() {
+            _errorMessage = 'Unable to get current location. Please check GPS signal.';
+          });
+          return;
+        }
+
+        // Check accuracy
+        if (position.accuracy > 50) {
+          setState(() {
+            _errorMessage = 'GPS accuracy is too low (${position.accuracy.round()}m). Please wait for better GPS signal.';
+          });
+          return;
+        }
+
+        final distance = Geolocator.distanceBetween(
+          position.latitude,
+          position.longitude,
+          orgLat,
+          orgLng,
+        );
+
+        if (distance > allowedRadius) {
+          setState(() {
+            _errorMessage = 'You are ${distance.round()}m from office. Allowed radius is ${allowedRadius}m.';
+          });
+          return;
+        }
+
+        // Get location for payload
+        locationData = await locationService.getCurrentLocation();
+      }
+    }
+
+    _issuePayload(
+      userId: userId,
+      orgId: orgId,
+      action: action,
+      lat: locationData?['lat'],
+      lng: locationData?['lng'],
+    );
   }
 
   void _issuePayload({
     required String userId,
     required String orgId,
     required QrAttendanceAction action,
+    double? lat,
+    double? lng,
   }) {
     final now = DateTime.now();
     _timer?.cancel();
@@ -218,6 +302,8 @@ class _QrAttendanceEmployeeViewState extends State<QrAttendanceEmployeeView> {
         organizationId: orgId,
         type: action.value,
         timestamp: now.millisecondsSinceEpoch,
+        lat: lat,
+        lng: lng,
       );
       _remainingSeconds = QrAttendancePayload.expiryWindowMs ~/ 1000;
       _errorMessage = null;
