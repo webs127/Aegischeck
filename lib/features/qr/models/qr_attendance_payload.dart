@@ -10,12 +10,16 @@ class QrAttendancePayload {
   final String organizationId;
   final String type;
   final int timestamp;
+  final double? lat;
+  final double? lng;
 
   const QrAttendancePayload({
     required this.userId,
     required this.organizationId,
     required this.type,
     required this.timestamp,
+    this.lat,
+    this.lng,
   });
 
   QrAttendanceAction? get action => QrAttendanceAction.fromValue(type);
@@ -51,6 +55,8 @@ class QrAttendancePayload {
       'organizationId': organizationId,
       'type': type,
       'timestamp': timestamp,
+      if (lat != null) 'lat': lat,
+      if (lng != null) 'lng': lng,
     };
   }
 
@@ -62,6 +68,8 @@ class QrAttendancePayload {
       organizationId: (json['organizationId'] ?? '').toString().trim(),
       type: (json['type'] ?? '').toString().trim(),
       timestamp: int.tryParse(json['timestamp'].toString()) ?? 0,
+      lat: (json['lat'] as num?)?.toDouble(),
+      lng: (json['lng'] as num?)?.toDouble(),
     );
   }
 

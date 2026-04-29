@@ -22,7 +22,29 @@ class SettingsViewModel with ChangeNotifier {
   final TextEditingController lateThreshold = TextEditingController();
   final TextEditingController qrExpiryDuration = TextEditingController();
   final TextEditingController orgWorkdays = TextEditingController();
-  
+  final TextEditingController allowedRadius = TextEditingController();
+
+  final TextEditingController lat = TextEditingController();
+  final TextEditingController lng = TextEditingController();
+  bool strictMode = false;
+
+  bool showOfficeRadius = false;
+
+  onShowOfficeRadiusChanged(bool? value) {
+    if (value == null) {
+      showOfficeRadius = false;
+    } else {
+      showOfficeRadius = value;
+    }
+    print(showOfficeRadius);
+    notifyListeners();
+  }
+
+  onStrictModeChanged(bool? value) {
+    strictMode = value ?? false;
+    notifyListeners();
+  }
+
   bool selected = false;
   final List<bool> workdaysState = List.filled(7, false);
   List<String> workdays = ["Mon", "Tues", "Wed", "Thurs", "Fri", "Sat", "Sun"];
@@ -126,6 +148,17 @@ class SettingsViewModel with ChangeNotifier {
         workdaysState[i] = selectedWorkDays.contains(workdays[i]);
       }
       orgWorkdays.text = selectedWorkDays.join(', ');
+
+      showOfficeRadius = settings['showOfficeRadius'] ?? false;
+      if (showOfficeRadius) {
+        final location = settings['location'];
+        if (location is Map<String, dynamic>) {
+          lat.text = (location['lat'] ?? '').toString();
+          lng.text = (location['lng'] ?? '').toString();
+        }
+        allowedRadius.text = (settings['allowedRadius'] ?? '').toString();
+        strictMode = settings['strictMode'] ?? false;
+      }
     } catch (e) {
       errorMessage = e.toString();
     } finally {
@@ -158,7 +191,17 @@ class SettingsViewModel with ChangeNotifier {
         'checkOutTime': checkOutTime.text.trim(),
         'lateThreshold': lateThreshold.text.trim(),
         'workDays': delDuplicatedWorkDays,
+        'showOfficeRadius': showOfficeRadius,
       };
+
+      if (showOfficeRadius) {
+        settingsData['location'] = {
+          'lat': double.tryParse(lat.text.trim()) ?? 0.0,
+          'lng': double.tryParse(lng.text.trim()) ?? 0.0,
+        };
+        settingsData['allowedRadius'] = int.tryParse(allowedRadius.text.trim()) ?? 100;
+        settingsData['strictMode'] = strictMode;
+      }
 
       await _firestore.collection('organizations').doc(resolvedOrgId).set({
         'settings': settingsData,
@@ -203,6 +246,22 @@ class SettingsViewModel with ChangeNotifier {
     }
     orgWorkdays.text = selectedWorkDays.join(', ');
 
+    showOfficeRadius = _lastLoadedSettings['showOfficeRadius'] ?? false;
+    if (showOfficeRadius) {
+      final location = _lastLoadedSettings['location'];
+      if (location is Map<String, dynamic>) {
+        lat.text = (location['lat'] ?? '').toString();
+        lng.text = (location['lng'] ?? '').toString();
+      }
+      allowedRadius.text = (_lastLoadedSettings['allowedRadius'] ?? '').toString();
+      strictMode = _lastLoadedSettings['strictMode'] ?? false;
+    } else {
+      lat.clear();
+      lng.clear();
+      allowedRadius.clear();
+      strictMode = false;
+    }
+
     notifyListeners();
   }
 
@@ -218,6 +277,9 @@ class SettingsViewModel with ChangeNotifier {
     checkOutTime.dispose();
     lateThreshold.dispose();
     orgWorkdays.dispose();
+    allowedRadius.dispose();
+    lat.dispose();
+    lng.dispose();
     super.dispose();
   }
 }
