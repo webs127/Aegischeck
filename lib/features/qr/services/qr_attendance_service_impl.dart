@@ -1,5 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:geolocator/geolocator.dart';
+
+import '../../../core/services/location_service.dart';
 
 import '../models/qr_attendance_action.dart';
 import '../models/qr_attendance_payload.dart';
@@ -65,6 +68,38 @@ class QrAttendanceServiceImpl implements QrAttendanceService {
         final policy = attendancePolicyFromSettings(settings, scanTime);
         final attendanceStatus = classifyAttendanceScanStatus(policy, scanTime);
 
+        // Geo-fencing validation
+        double? scannerLat, scannerLng, distanceFromOrg;
+        final showOfficeRadius = settings?['showOfficeRadius'] ?? false;
+        final strictMode = settings?['strictMode'] ?? false;
+        if (showOfficeRadius && strictMode) {
+          final location = settings?['location'];
+          if (location is Map<String, dynamic>) {
+            final orgLat = (location['lat'] as num?)?.toDouble() ?? 0.0;
+            final orgLng = (location['lng'] as num?)?.toDouble() ?? 0.0;
+            final allowedRadius = (settings?['allowedRadius'] as num?)?.toInt() ?? 100;
+
+            final locationService = LocationService();
+            final scannerLocation = await locationService.getCurrentLocation();
+            if (scannerLocation == null) {
+              return QrAttendanceResult.error('Unable to get scanner location.');
+            }
+
+            scannerLat = scannerLocation['lat'];
+            scannerLng = scannerLocation['lng'];
+            distanceFromOrg = Geolocator.distanceBetween(
+              scannerLat!,
+              scannerLng!,
+              orgLat,
+              orgLng,
+            );
+
+            if (distanceFromOrg > allowedRadius) {
+              return QrAttendanceResult.error('Scanner is outside allowed area.');
+            }
+          }
+        }
+
         final nextStatus = action == QrAttendanceAction.signIn
           ? (attendanceStatus == AttendanceScanStatus.late
               ? 'Late'
@@ -100,6 +135,11 @@ class QrAttendanceServiceImpl implements QrAttendanceService {
           'scanTimestamp': scanTimestamp,
           'attendanceStatus': attendanceStatus,
           'timestamp': FieldValue.serverTimestamp(),
+          if (payload.lat != null) 'userLat': payload.lat,
+          if (payload.lng != null) 'userLng': payload.lng,
+          if (scannerLat != null) 'scannerLat': scannerLat,
+          if (scannerLng != null) 'scannerLng': scannerLng,
+          if (distanceFromOrg != null) 'distanceFromOrg': distanceFromOrg,
         });
 
         transaction.update(userRef, {

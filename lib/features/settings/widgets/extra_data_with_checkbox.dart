@@ -5,9 +5,15 @@ import 'package:provider/provider.dart';
 
 class ExtraDataWithCheckBox extends StatelessWidget {
   final String heading;
+  final bool value;
+  final Function(bool?)? onChanged;
   final String subText;
   const ExtraDataWithCheckBox({
-    super.key, required this.heading, required this.subText,
+    super.key,
+    required this.heading,
+    this.value = false,
+    this.onChanged,
+    required this.subText,
   });
 
   @override
@@ -20,31 +26,18 @@ class ExtraDataWithCheckBox extends StatelessWidget {
           children: [
             Text(
               heading,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
             Text(
               subText,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w400,
-              ),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w400),
             ),
           ],
         ),
-        Selector<SettingsViewModel, bool>(
-          builder: (context, check, __) {
-            return Checkbox.adaptive(
-              fillColor: WidgetStatePropertyAll(ColorManager.primary1),
-              value: check,
-              onChanged: context
-                  .read<SettingsViewModel>()
-                  .onCheckBoxChanged,
-            );
-          },
-          selector: (__, vm) => vm.isChecked,
+        Checkbox.adaptive(
+          fillColor: WidgetStatePropertyAll(ColorManager.primary1),
+          value: value,
+          onChanged: onChanged,
         ),
       ],
     );
